@@ -1,0 +1,120 @@
+@page "/"
+@rendermode InteractiveServer
+@inject CurrentUserState CurrentUser
+@inject UserService UserSvc
+
+<PageTitle>OIG Management</PageTitle>
+
+<h1>User Permissions Management</h1>
+
+<div class="card mt-4" style="max-width: 500px;">
+    <div class="card-header">
+        <h5 class="mb-0">Current User</h5>
+    </div>
+    <div class="card-body">
+        @if (CurrentUser.UserId.HasValue)
+        {
+            <div class="alert alert-success mb-3">
+                Logged in as: <strong>@_currentName</strong>
+                <br /><small class="text-muted">@CurrentUser.UserId</small>
+            </div>
+            <button class="btn btn-outline-secondary btn-sm" @onclick="Logout">Change user</button>
+        }
+        else
+        {
+            <p>Enter a User ID to authenticate (check WebApi console for the seeded Admin ID):</p>
+            <div class="input-group mb-3">
+                <input class="form-control" placeholder="User ID (GUID)" @bind="_inputId" />
+                <button class="btn btn-primary" @onclick="Login">Login</button>
+            </div>
+
+            @if (_users is not null && _users.Items.Count > 0)
+            {
+                <p class="mt-2">Or select a user:</p>
+                @foreach (var u in _users.Items)
+                {
+                    <button class="btn btn-outline-primary btn-sm me-2 mb-2" @onclick="() => LoginAs(u.Id, u.Name)">
+                        @u.Name
+                    </button>
+                }
+            }
+
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <div class="alert alert-danger mt-2">@_error</div>
+            }
+        }
+    </div>
+</div>
+
+<div class="mt-4">
+    <p>Use the navigation menu to manage organizations, users, and roles.</p>
+</div>
+
+@code {
+    private string _inputId = "";
+    private string? _currentName;
+    private string? _error;
+    private UsersListResponse? _users;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (CurrentUser.UserId.HasValue)
+        {
+            await LoadCurrentName();
+        }
+        await TryLoadUserList();
+    }
+
+    private async Task TryLoadUserList()
+    {
+        try
+        {
+            _users = await UserSvc.GetListAsync();
+        }
+        catch
+        {
+            // Users list requires auth - expected when not logged in
+        }
+    }
+
+    private async Task Login()
+    {
+        _error = null;
+        if (!Guid.TryParse(_inputId, out var id))
+        {
+            _error = "Invalid GUID format";
+            return;
+        }
+        CurrentUser.UserId = id;
+        await LoadCurrentName();
+        await TryLoadUserList();
+    }
+
+    private async Task LoginAs(Guid id, string name)
+    {
+        CurrentUser.UserId = id;
+        _currentName = name;
+        await TryLoadUserList();
+    }
+
+    private async Task LoadCurrentName()
+    {
+        try
+        {
+            var user = await UserSvc.GetByIdAsync(CurrentUser.UserId!.Value);
+            _currentName = user?.Name ?? "Unknown";
+        }
+        catch
+        {
+            _currentName = "User " + CurrentUser.UserId;
+        }
+    }
+
+    private void Logout()
+    {
+        CurrentUser.UserId = null;
+        _currentName = null;
+        _users = null;
+    }
+}

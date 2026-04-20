@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "OIG.WebApi": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:41012;http://localhost:41013"
+    }
+  }
+}

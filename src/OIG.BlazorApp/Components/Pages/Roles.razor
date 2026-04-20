@@ -1,0 +1,65 @@
+@page "/roles"
+@rendermode InteractiveServer
+@inject RoleService RoleSvc
+@inject NavigationManager Nav
+
+<PageTitle>Roles</PageTitle>
+
+<h3>Roles</h3>
+
+<div class="row mb-3">
+    <div class="col-md-4">
+        <input class="form-control" placeholder="Search by name..." @bind="_search" @bind:event="oninput" @onkeyup="OnSearch" />
+    </div>
+    <div class="col-md-4"></div>
+    <div class="col-md-4">
+        <button class="btn btn-primary" @onclick="GoCreate">+ New Role</button>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <p>Loading...</p>
+}
+else if (_roles is null || _roles.Items.Count == 0)
+{
+    <p>No roles found.</p>
+}
+else
+{
+    <table class="table table-striped table-sm">
+        <thead>
+            <tr><th>Name</th><th>Permissions</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var r in _roles.Items)
+            {
+                <tr>
+                    <td>@r.Name</td>
+                    <td>@string.Join(", ", r.Permissions.Where(p => p != Permission.None))</td>
+                    <td><button class="btn btn-sm btn-outline-primary" @onclick="() => GoEdit(r.Id)">Edit</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private RolesListResponse? _roles;
+    private string? _search;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync() => await LoadRoles();
+
+    private async Task LoadRoles()
+    {
+        _loading = true;
+        _roles = await RoleSvc.GetListAsync(search: _search);
+        _loading = false;
+    }
+
+    private async Task OnSearch() => await LoadRoles();
+
+    private void GoCreate() => Nav.NavigateTo("/roles/new");
+    private void GoEdit(Guid id) => Nav.NavigateTo($"/roles/{id}");
+}

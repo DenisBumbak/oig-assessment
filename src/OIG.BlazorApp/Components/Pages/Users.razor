@@ -1,0 +1,100 @@
+@page "/users"
+@rendermode InteractiveServer
+@inject UserService UserSvc
+@inject OrganizationService OrgSvc
+@inject NavigationManager Nav
+
+<PageTitle>Users</PageTitle>
+
+<h3>Users</h3>
+
+<div class="row mb-3">
+    <div class="col-md-4">
+        <input class="form-control" placeholder="Search by name..." @bind="_search" @bind:event="oninput" @onkeyup="OnSearch" />
+    </div>
+    <div class="col-md-4">
+        <select class="form-select" @onchange="OnOrgFilterChanged">
+            <option value="">All organizations</option>
+            @if (_orgs is not null)
+            {
+                @foreach (var org in FlattenOrgs(_orgs.Roots))
+                {
+                    <option value="@org.Id" selected="@(org.Id == _orgFilter)">@org.Prefix@org.Name</option>
+                }
+            }
+        </select>
+    </div>
+    <div class="col-md-4">
+        <button class="btn btn-primary" @onclick="GoCreate">+ New User</button>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <p>Loading...</p>
+}
+else if (_users is null || _users.Items.Count == 0)
+{
+    <p>No users found.</p>
+}
+else
+{
+    <table class="table table-striped table-sm">
+        <thead>
+            <tr><th>Name</th><th>Email</th><th>Active</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var u in _users.Items)
+            {
+                <tr>
+                    <td>@u.Name</td>
+                    <td>@u.Email</td>
+                    <td>@(u.IsActive ? "Yes" : "No")</td>
+                    <td><button class="btn btn-sm btn-outline-primary" @onclick="() => GoEdit(u.Id)">Edit</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private UsersListResponse? _users;
+    private OrganizationHierarchyResponse? _orgs;
+    private string? _search;
+    private Guid? _orgFilter;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _orgs = await OrgSvc.GetHierarchyAsync();
+        await LoadUsers();
+    }
+
+    private async Task LoadUsers()
+    {
+        _loading = true;
+        _users = await UserSvc.GetListAsync(_orgFilter, _search);
+        _loading = false;
+    }
+
+    private async Task OnSearch() => await LoadUsers();
+
+    private void GoCreate() => Nav.NavigateTo("/users/new");
+    private void GoEdit(Guid id) => Nav.NavigateTo($"/users/{id}");
+
+    private async Task OnOrgFilterChanged(ChangeEventArgs e)
+    {
+        _orgFilter = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        await LoadUsers();
+    }
+
+    private IEnumerable<(Guid Id, string Name, string Prefix)> FlattenOrgs(List<OrganizationNodeDto> nodes, int depth = 0)
+    {
+        foreach (var n in nodes)
+        {
+            yield return (n.Id, n.Name, new string('\u00A0', depth * 3));
+            foreach (var child in FlattenOrgs(n.Children, depth + 1))
+                yield return child;
+        }
+    }
+}

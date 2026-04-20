@@ -1,0 +1,156 @@
+@page "/users/new"
+@page "/users/{Id:guid}"
+@rendermode InteractiveServer
+@inject UserService UserSvc
+@inject RoleService RoleSvc
+@inject OrganizationService OrgSvc
+@inject NavigationManager Nav
+
+<PageTitle>@(_isNew ? "New User" : "Edit User")</PageTitle>
+
+<h3>@(_isNew ? "New User" : "Edit User")</h3>
+
+@if (_loading)
+{
+    <p>Loading...</p>
+}
+else
+{
+    <EditForm Model="_form" OnValidSubmit="Save">
+        <DataAnnotationsValidator />
+        <div class="mb-3">
+            <label class="form-label">Name</label>
+            <InputText class="form-control" @bind-Value="_form.Name" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Email</label>
+            <InputText class="form-control" @bind-Value="_form.Email" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Organization</label>
+            <select class="form-select" @bind="_form.OrganizationId">
+                <option value="">None</option>
+                @if (_orgs is not null)
+                {
+                    @foreach (var org in FlattenOrgs(_orgs.Roots))
+                    {
+                        <option value="@org.Id">@org.Prefix@org.Name</option>
+                    }
+                }
+            </select>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Roles</label>
+            @if (_allRoles is not null)
+            {
+                @foreach (var role in _allRoles.Items)
+                {
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" checked="@_selectedRoleIds.Contains(role.Id)"
+                               @onchange="e => ToggleRole(role.Id, (bool)(e.Value ?? false))" />
+                        <label class="form-check-label">@role.Name</label>
+                    </div>
+                }
+            }
+        </div>
+        <button type="submit" class="btn btn-success">Save</button>
+        <button type="button" class="btn btn-secondary ms-2" @onclick="GoBack">Cancel</button>
+        @if (!_isNew)
+        {
+            <button type="button" class="btn btn-danger ms-2" @onclick="Delete">Delete</button>
+        }
+    </EditForm>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-danger mt-3">@_error</div>
+    }
+}
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+    private bool _isNew => !Id.HasValue;
+    private bool _loading = true;
+    private string? _error;
+    private UserFormModel _form = new();
+    private OrganizationHierarchyResponse? _orgs;
+    private RolesListResponse? _allRoles;
+    private HashSet<Guid> _selectedRoleIds = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _orgs = await OrgSvc.GetHierarchyAsync();
+        _allRoles = await RoleSvc.GetListAsync();
+
+        if (!_isNew)
+        {
+            var user = await UserSvc.GetByIdAsync(Id!.Value);
+            if (user is not null)
+            {
+                _form = new UserFormModel
+                {
+                    Name = user.Name,
+                    Email = user.Email,
+                    OrganizationId = user.OrganizationId?.ToString() ?? ""
+                };
+                _selectedRoleIds = user.Roles.Select(r => r.RoleId).ToHashSet();
+            }
+        }
+        _loading = false;
+    }
+
+    private void ToggleRole(Guid roleId, bool isChecked)
+    {
+        if (isChecked) _selectedRoleIds.Add(roleId);
+        else _selectedRoleIds.Remove(roleId);
+    }
+
+    private async Task Save()
+    {
+        _error = null;
+        try
+        {
+            var orgId = Guid.TryParse(_form.OrganizationId, out var oid) ? oid : (Guid?)null;
+            if (_isNew)
+            {
+                await UserSvc.CreateAsync(new CreateUserRequest(_form.Name, _form.Email, orgId));
+            }
+            else
+            {
+                await UserSvc.UpdateAsync(Id!.Value, new UpdateUserRequest(_form.Name, _form.Email, orgId, _selectedRoleIds.ToList()));
+            }
+            Nav.NavigateTo("/users");
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private async Task Delete()
+    {
+        if (!Id.HasValue) return;
+        try
+        {
+            await UserSvc.DeleteAsync(Id.Value);
+            Nav.NavigateTo("/users");
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private void GoBack() => Nav.NavigateTo("/users");
+
+    private IEnumerable<(Guid Id, string Name, string Prefix)> FlattenOrgs(List<OrganizationNodeDto> nodes, int depth = 0)
+    {
+        foreach (var n in nodes)
+        {
+            yield return (n.Id, n.Name, new string('\u00A0', depth * 3));
+            foreach (var child in FlattenOrgs(n.Children, depth + 1))
+                yield return child;
+        }
+    }
+
+    public class UserFormModel
+    {
+        public string Name { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string OrganizationId { get; set; } = "";
+    }
+}

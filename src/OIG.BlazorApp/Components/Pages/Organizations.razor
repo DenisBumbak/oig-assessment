@@ -1,0 +1,151 @@
+@page "/organizations"
+@rendermode InteractiveServer
+@inject OrganizationService OrgService
+
+<PageTitle>Organizations</PageTitle>
+
+<h3>Organizations</h3>
+
+@if (_loading)
+{
+    <p>Loading...</p>
+}
+else if (_hierarchy is null)
+{
+    <p>Failed to load organizations.</p>
+}
+else
+{
+    <div class="row">
+        <div class="col-md-5">
+            <h5>Hierarchy</h5>
+            @foreach (var root in _hierarchy.Roots)
+            {
+                <OrgTreeNode Node="root" SelectedId="_selectedId" OnSelect="SelectOrg" />
+            }
+            <hr />
+            <button class="btn btn-sm btn-primary" @onclick="StartCreateRoot">+ Root Organization</button>
+        </div>
+        <div class="col-md-7">
+            @if (_editing)
+            {
+                <h5>@(_isNew ? "New Organization" : "Edit Organization")</h5>
+                <EditForm Model="_form" OnValidSubmit="SaveOrg">
+                    <DataAnnotationsValidator />
+                    <div class="mb-3">
+                        <label class="form-label">Name</label>
+                        <InputText class="form-control" @bind-Value="_form.Name" />
+                        <ValidationMessage For="() => _form.Name" />
+                    </div>
+                    <button type="submit" class="btn btn-success btn-sm">Save</button>
+                    <button type="button" class="btn btn-secondary btn-sm" @onclick="CancelEdit">Cancel</button>
+                    @if (!_isNew)
+                    {
+                        <button type="button" class="btn btn-danger btn-sm ms-2" @onclick="DeleteOrg">Delete</button>
+                    }
+                </EditForm>
+            }
+            else if (_selectedId.HasValue)
+            {
+                <p>Select an organization to edit, or create a new one.</p>
+            }
+        </div>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="alert alert-danger mt-3">@_error</div>
+}
+
+@code {
+    private OrganizationHierarchyResponse? _hierarchy;
+    private Guid? _selectedId;
+    private Guid? _parentIdForNew;
+    private bool _loading = true;
+    private bool _editing;
+    private bool _isNew;
+    private string? _error;
+    private OrgFormModel _form = new();
+
+    protected override async Task OnInitializedAsync() => await LoadHierarchy();
+
+    private async Task LoadHierarchy()
+    {
+        _loading = true;
+        try { _hierarchy = await OrgService.GetHierarchyAsync(); }
+        catch (Exception ex) { _error = ex.Message; }
+        _loading = false;
+    }
+
+    private async Task SelectOrg(Guid id)
+    {
+        _selectedId = id;
+        _error = null;
+        try
+        {
+            var org = await OrgService.GetByIdAsync(id);
+            if (org is not null)
+            {
+                _form = new OrgFormModel { Name = org.Name };
+                _parentIdForNew = org.ParentId;
+                _editing = true;
+                _isNew = false;
+            }
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private void StartCreateRoot()
+    {
+        _selectedId = null;
+        _parentIdForNew = null;
+        _form = new OrgFormModel();
+        _editing = true;
+        _isNew = true;
+    }
+
+    private async Task SaveOrg()
+    {
+        _error = null;
+        try
+        {
+            if (_isNew)
+            {
+                await OrgService.CreateAsync(new CreateOrganizationRequest(_form.Name, _parentIdForNew));
+            }
+            else if (_selectedId.HasValue)
+            {
+                await OrgService.UpdateAsync(_selectedId.Value, new UpdateOrganizationRequest(_form.Name, _parentIdForNew));
+            }
+            _editing = false;
+            await LoadHierarchy();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private async Task DeleteOrg()
+    {
+        if (!_selectedId.HasValue) return;
+        _error = null;
+        try
+        {
+            await OrgService.DeleteAsync(_selectedId.Value);
+            _editing = false;
+            _selectedId = null;
+            await LoadHierarchy();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private void CancelEdit()
+    {
+        _editing = false;
+        _error = null;
+    }
+
+    public class OrgFormModel
+    {
+        public string Name { get; set; } = string.Empty;
+    }
+}
